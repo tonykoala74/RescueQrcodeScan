@@ -1,61 +1,136 @@
 <!DOCTYPE html>
-<html>
+<html lang="zh-TW">
 <head>
+    <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>管制站掃描系統</title>
+    <title>救災管制站 - 掃描系統</title>
     <script src="https://unpkg.com/html5-qrcode"></script>
     <style>
-        body { font-family: sans-serif; text-align: center; padding: 20px; }
-        #reader { width: 100%; max-width: 500px; margin: auto; }
-        .btn-group { margin-top: 20px; }
-        .btn { padding: 15px 30px; font-size: 18px; margin: 10px; cursor: pointer; border-radius: 10px; border: none; color: white; }
-        .btn-in { background: #28a745; }
-        .btn-out { background: #dc3545; }
+        body { font-family: -apple-system, sans-serif; background-color: #f0f2f5; text-align: center; padding: 20px; margin: 0; }
+        .container { max-width: 450px; margin: auto; }
+        .card { background: white; padding: 25px; border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); margin-top: 20px; }
+        
+        /* 登入樣式 */
+        input { width: 90%; padding: 15px; margin: 15px 0; border: 2px solid #ddd; border-radius: 10px; font-size: 18px; text-align: center; }
+        
+        /* 按鈕樣式 */
+        .btn { border: none; padding: 15px; border-radius: 10px; font-size: 18px; font-weight: bold; cursor: pointer; transition: 0.3s; }
+        .btn-main { background-color: #d32f2f; color: white; width: 100%; }
+        .btn-status { flex: 1; color: white; }
+        .btn-in { background-color: #28a745; }
+        .btn-out { background-color: #dc3545; }
+        
+        /* 掃描區域 */
+        #scannerArea { display: none; }
+        #reader { width: 100%; border-radius: 10px; overflow: hidden; background: #000; }
+        .status-group { display: flex; gap: 10px; margin-top: 20px; }
+        .current-mode { font-size: 1.2em; font-weight: bold; color: #1a73e8; margin-bottom: 15px; }
+        
+        #loading { display: none; color: #666; margin-top: 10px; }
     </style>
 </head>
 <body>
-    <h2>管制站人員進出掃描</h2>
-    <div id="reader"></div>
-    
-    <div class="btn-group">
-        <p>目前設定狀態：<b id="statusText" style="color: blue;">進入</b></p>
-        <button class="btn btn-in" onclick="setStatus('進入')">切換至：進入</button>
-        <button class="btn btn-out" onclick="setStatus('離開')">切換至：離開</button>
+
+    <div class="container">
+        <div id="loginArea" class="card">
+            <h2 style="color: #d32f2f;">管制站安全登入</h2>
+            <p>請輸入 B2-B10 授權密碼</p>
+            <input type="password" id="pwdInput" placeholder="請輸入密碼" autocomplete="current-password">
+            <button class="btn btn-main" onclick="login()">驗證並啟動鏡頭</button>
+            <p id="loginMsg" style="color: red; margin-top: 10px;"></p>
+        </div>
+
+        <div id="scannerArea" class="card">
+            <div id="currentStatusDisp" class="current-mode">模式：進入登記</div>
+            <div id="reader"></div>
+            
+            <div class="status-group">
+                <button class="btn btn-status btn-in" onclick="changeMode('進入')">切換進入</button>
+                <button class="btn btn-status btn-out" onclick="changeMode('離開')">切換離開</button>
+            </div>
+            <div id="loading">上傳紀錄中...</div>
+        </div>
     </div>
 
     <script>
-        let currentStatus = "進入";
+        // 您的專屬 GAS URL
         const GAS_URL = "https://script.google.com/macros/s/AKfycbz_L2NidT117TndleNl1wlutXsyUrHi38AhZWuOoIdCt_y7KNQG5ZF92rOo4H405smb_w/exec"; 
+        let currentMode = "進入";
+        let html5QrCode;
 
-        function setStatus(s) {
-            currentStatus = s;
-            document.getElementById('statusText').innerText = s;
+        // 登入驗證
+        async function login() {
+            const pwd = document.getElementById('pwdInput').value.trim();
+            if (!pwd) return alert("請輸入密碼");
+            
+            const msg = document.getElementById('loginMsg');
+            msg.innerText = "驗證中...";
+            msg.style.color = "blue";
+            
+            try {
+                // 呼叫 GAS checkPassword 功能
+                const response = await fetch(`${GAS_URL}?action=checkPassword&pwd=${encodeURIComponent(pwd)}`);
+                const data = await response.json();
+                
+                if (data.auth) {
+                    document.getElementById('loginArea').style.display = 'none';
+                    document.getElementById('scannerArea').style.display = 'block';
+                    startScanner(); 
+                } else {
+                    msg.innerText = "密碼錯誤或已過期";
+                    msg.style.color = "red";
+                }
+            } catch (e) {
+                alert("網路異常，請確認已連網");
+                msg.innerText = "";
+            }
         }
 
-        function onScanSuccess(decodedText, decodedResult) {
-            // 暫停掃描避免重複讀取
-            html5QrcodeScanner.clear();
+        // 強制後鏡頭啟動
+        function startScanner() {
+            html5QrCode = new Html5Qrcode("reader");
+            const config = { fps: 10, qrbox: { width: 250, height: 250 } };
             
-            // 將掃描到的 UID 發送到 GAS
-            fetch(GAS_URL, {
-                method: "POST",
-                body: JSON.stringify({
-                    uid: decodedText,
-                    status: currentStatus,
-                    name: "掃描解析中" // 這裡可以進階改為從試算表反查姓名
-                })
-            })
-            .then(res => res.json())
-            .then(data => {
-                alert(currentStatus + " 紀錄成功：" + decodedText);
-                location.reload(); // 重新啟動掃描器
+            // 使用 environment 強制後鏡頭
+            html5QrCode.start({ facingMode: "environment" }, config, onScanSuccess)
+            .catch(err => {
+                alert("鏡頭啟動失敗，請確認是否允許相機權限");
             });
         }
 
-        var html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: 250 });
-        html5QrcodeScanner.render(onScanSuccess);
+        function changeMode(mode) {
+            currentMode = mode;
+            document.getElementById('currentStatusDisp').innerText = "模式：" + mode + "登記";
+            document.getElementById('currentStatusDisp').style.color = (mode === '進入' ? '#28a745' : '#dc3545');
+        }
+
+        // 掃描成功處理
+        async function onScanSuccess(decodedText) {
+            // 先停止掃描避免重複讀取
+            await html5QrCode.stop();
+            document.getElementById('loading').style.display = 'block';
+
+            try {
+                // 發送 POST 紀錄
+                const response = await fetch(GAS_URL, {
+                    method: "POST",
+                    body: JSON.stringify({
+                        uid: decodedText,
+                        status: currentMode
+                    })
+                });
+                const result = await response.json();
+                
+                // 顯示反查出的姓名
+                alert(`${currentMode} 成功！\n姓名：${result.name}\n編號：${decodedText}`);
+            } catch (e) {
+                alert("紀錄失敗，請檢查網路連線");
+            }
+            
+            document.getElementById('loading').style.display = 'none';
+            // 重新啟動掃描
+            startScanner();
+        }
     </script>
 </body>
 </html>
-
-
