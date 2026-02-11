@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>管制站掃描系統</title>
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    <style>
+        body { font-family: sans-serif; text-align: center; padding: 20px; }
+        #reader { width: 100%; max-width: 500px; margin: auto; }
+        .btn-group { margin-top: 20px; }
+        .btn { padding: 15px 30px; font-size: 18px; margin: 10px; cursor: pointer; border-radius: 10px; border: none; color: white; }
+        .btn-in { background: #28a745; }
+        .btn-out { background: #dc3545; }
+    </style>
+</head>
+<body>
+    <h2>管制站人員進出掃描</h2>
+    <div id="reader"></div>
+    
+    <div class="btn-group">
+        <p>目前設定狀態：<b id="statusText" style="color: blue;">進入</b></p>
+        <button class="btn btn-in" onclick="setStatus('進入')">切換至：進入</button>
+        <button class="btn btn-out" onclick="setStatus('離開')">切換至：離開</button>
+    </div>
+
+    <script>
+        let currentStatus = "進入";
+        const GAS_URL = "您的_GAS_網址"; 
+
+        function setStatus(s) {
+            currentStatus = s;
+            document.getElementById('statusText').innerText = s;
+        }
+
+        function onScanSuccess(decodedText, decodedResult) {
+            // 暫停掃描避免重複讀取
+            html5QrcodeScanner.clear();
+            
+            // 將掃描到的 UID 發送到 GAS
+            fetch(GAS_URL, {
+                method: "POST",
+                body: JSON.stringify({
+                    uid: decodedText,
+                    status: currentStatus,
+                    name: "掃描解析中" // 這裡可以進階改為從試算表反查姓名
+                })
+            })
+            .then(res => res.json())
+            .then(data => {
+                alert(currentStatus + " 紀錄成功：" + decodedText);
+                location.reload(); // 重新啟動掃描器
+            });
+        }
+
+        var html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: 250 });
+        html5QrcodeScanner.render(onScanSuccess);
+    </script>
+</body>
+</html>
